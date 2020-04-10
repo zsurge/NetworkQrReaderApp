@@ -60,4 +60,4 @@ dkms.conf
 
 #忽略工程中间文件
 MDK_PRO/*
-!MDK_PRO/ElevatorControlAPP.uvprojx
+!MDK_PRO/NetworkQrReaderApp.uvprojx
