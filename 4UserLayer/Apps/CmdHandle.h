@@ -50,6 +50,10 @@
 #define QUEUE_BUF_LEN   512
 
 
+
+
+
+
 #pragma pack(1)
 typedef struct
 {
@@ -66,6 +70,7 @@ extern int gConnectStatus;
 extern int gMySock;
 extern uint8_t gUpdateDevSn; 
 extern uint32_t gCurTick;
+
 
 
 

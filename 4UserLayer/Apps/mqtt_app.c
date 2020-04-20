@@ -21,6 +21,9 @@
 #include "pub_options.h"
 #include "bsp_beep.h"
 #include "jsonUtils.h"
+#include "bsp_ds1302.h"
+
+
 
 #define LOG_TAG    "MQTTAPP"
 #include "elog.h"
@@ -107,7 +110,10 @@ MQTT_START:
 
 	ReadLocalDevSn();
 
-	data.clientID.cstring = gMqttDevSn.sn;              //随机
+    strcpy(data.clientID.cstring,gMqttDevSn.sn);
+    strcat(data.clientID.cstring,time_to_timestamp());
+    
+	//data.clientID.cstring = gMqttDevSn.sn;              //随机
 	data.keepAliveInterval = KEEPLIVE_TIME;         //保持活跃
 	data.username.cstring = USER_NAME;              //用户名
 	data.password.cstring = PASSWORD;               //秘钥
@@ -208,7 +214,7 @@ MQTT_START:
 					upack_flag = 0;
 					ackUp();
 				}
-				
+
 				break;
 			//订阅确认 订阅请求报文确认
 			case SUBACK://9

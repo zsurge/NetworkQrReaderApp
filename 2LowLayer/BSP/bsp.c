@@ -58,7 +58,7 @@ static void my_mem_init(void)
 
     bsp_ds1302_init(); //DS1302_GPIO_Init();             //时钟芯片初始化    
 
-	bsp_key_Init();             //按键初始化
+//	bsp_key_Init();             //按键初始化
 
 	bsp_LED_Init();		        //初始化LED端口	 
 	
@@ -66,7 +66,7 @@ static void my_mem_init(void)
 
     easyflash_init();           //外部FLASH初始化，使用easyflash     
 
-    bsp_WiegandInit();          //韦根读卡器初始化
+//    bsp_WiegandInit();          //韦根读卡器初始化
 
     my_mem_init();                  //对内存进行初始化
 

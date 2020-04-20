@@ -26,6 +26,7 @@
 #include "bsp_ds1302.h"
 
 
+
 #define LOG_TAG    "FloorData"
 #include "elog.h"
 
@@ -98,7 +99,7 @@ void packetSendBuf(READER_BUFF_STRU *pQueue,uint8_t *buf)
             //2.发给服务器
             packetPayload(&localUserData,jsonBuf); 
 
-            len = strlen(jsonBuf);
+            len = strlen((const char*)jsonBuf);
 
             len = mqttSendData(jsonBuf,len);
             log_d("send = %d\r\n",len);            
@@ -254,16 +255,17 @@ SYSERRORCODE_E authReader(READER_BUFF_STRU *pQueue,LOCAL_USER_STRU *localUserDat
         timestamp_to_time(atoi(qrCodeInfo.qrEndtimeStamp)); 
         
         localUserData->authMode = pQueue->authMode; 
-        localUserData->defaultFloor = qrCodeInfo.tagFloor;   
+        //localUserData->defaultFloor = qrCodeInfo.tagFloor;   
         localUserData->qrType = qrCodeInfo.type;   
         memcpy(localUserData->qrID,qrCodeInfo.qrID,QRID_LEN); 
         memcpy(localUserData->startTime,qrCodeInfo.startTime,TIME_LEN);
         memcpy(localUserData->endTime,qrCodeInfo.endTime,TIME_LEN); 
         memcpy(localUserData->timeStamp,time_to_timestamp(),TIMESTAMP_LEN); 
+        memcpy(localUserData->accessFloor,qrCodeInfo.accessFloor,FLOOR_ARRAY_LEN); 
     }
     else
     {
-        //读卡 CARD 230000000089E1E35D,23
+        //读卡 CARD 230000000089E1E35D,23       
     
         memcpy(key,pQueue->data+pQueue->dataLen-CARD_NO_LEN,CARD_NO_LEN);
         log_d("key = %s\r\n",key);
@@ -278,16 +280,16 @@ SYSERRORCODE_E authReader(READER_BUFF_STRU *pQueue,LOCAL_USER_STRU *localUserDat
             return NO_AUTHARITY_ERR;
         } 
         
-        localUserData->qrType = 4;
+        localUserData->qrType = 2;
         localUserData->authMode = pQueue->authMode; 
         localUserData->defaultFloor = rUserData.defaultFloor;
         memcpy(localUserData->userId,rUserData.userId,CARD_USER_LEN);        
-        memcpy(localUserData->cardNo,rUserData.cardNo,CARD_USER_LEN);      
-        memcpy(localUserData->timeStamp,time_to_timestamp(),TIMESTAMP_LEN);
-    log_d("localUserData->timeStamp = %s\r\n",localUserData->timeStamp);        
+        memcpy(localUserData->cardNo,rUserData.cardNo,CARD_USER_LEN); 
         memcpy(localUserData->accessFloor,rUserData.accessFloor,FLOOR_ARRAY_LENGTH);    
         memcpy(localUserData->startTime,rUserData.startTime,TIME_LENGTH);
-        memcpy(localUserData->endTime,rUserData.endTime,TIME_LENGTH);            
+        memcpy(localUserData->endTime,rUserData.endTime,TIME_LENGTH);  
+        memcpy(localUserData->timeStamp,time_to_timestamp(),TIMESTAMP_LEN);
+        log_d("localUserData->timeStamp = %s\r\n",localUserData->timeStamp);         
     }
 
     log_d("localUserData->cardNo = %s\r\n",localUserData->cardNo);
@@ -319,7 +321,7 @@ SYSERRORCODE_E authRemote(READER_BUFF_STRU *pQueue,LOCAL_USER_STRU *localUserDat
     
     memset(value,0x00,sizeof(value));
 
-    val_len = ef_get_env_blob(key, value, sizeof(value) , NULL);
+    val_len = ef_get_env_blob((const char*)key, value, sizeof(value) , NULL);
    
 
     log_d("get env = %s,val_len = %d\r\n",value,val_len);
@@ -344,25 +346,25 @@ SYSERRORCODE_E authRemote(READER_BUFF_STRU *pQueue,LOCAL_USER_STRU *localUserDat
     
     if(AUTH_MODE_QR == pQueue->authMode)
     {
-        strcpy(localUserData->userId,key);
+        strcpy((char*)localUserData->userId,(const char*)key);
         
-        strcpy(localUserData->cardNo,buf[0]);        
+        strcpy((char*)localUserData->cardNo,buf[0]);        
     }
     else
     {
         memcpy(localUserData->cardNo,key,CARD_NO_LEN);
 
         log_d("buf[0] = %s\r\n",buf[0]);
-        strcpy(localUserData->userId,buf[0]);        
+        strcpy((char*)localUserData->userId,buf[0]);        
     }   
 
     //3867;0;0;2019-12-29;2029-12-31
     
     
-    strcpy(localUserData->accessFloor,buf[1]);
+    strcpy((char*)localUserData->accessFloor,buf[1]);
     localUserData->defaultFloor = atoi(buf[2]);
-    strcpy(localUserData->startTime,buf[3]);
-    strcpy(localUserData->endTime,buf[4]);    
+    strcpy((char*)localUserData->startTime,buf[3]);
+    strcpy((char*)localUserData->endTime,buf[4]);    
 
 
 
@@ -374,16 +376,15 @@ SYSERRORCODE_E authRemote(READER_BUFF_STRU *pQueue,LOCAL_USER_STRU *localUserDat
     log_d("localUserData->endTime = %s\r\n",localUserData->endTime);        
     log_d("localUserData->authMode = %d\r\n",localUserData->authMode);
 
-    return NO_ERR;
+    return result;
 
 }
 
 static SYSERRORCODE_E packetToElevator(LOCAL_USER_STRU *localUserData,uint8_t *buff)
 {
     SYSERRORCODE_E result = NO_ERR;
-    uint8_t oneLayer[8] = {0};
     uint8_t tmpBuf[MAX_SEND_LEN+1] = {0};
-//    char *authLayer[64] = {0}; //权限楼层，最多64层
+    char authLayer[64] = {0}; //权限楼层，最多64层
     int num = 0;    
     uint8_t sendBuf[MAX_SEND_LEN+1] = {0};
 
@@ -404,36 +405,38 @@ static SYSERRORCODE_E packetToElevator(LOCAL_USER_STRU *localUserData,uint8_t *b
 
 //    split(localUserData->accessFloor,",",authLayer,&num); //调用函数进行分割 
 
-//    log_d("num = %d\r\n",num);
+    memcpy(authLayer,localUserData->accessFloor,FLOOR_ARRAY_LEN);
+    num = strlen((const char*)authLayer);
+
+    dbh("accessfloor",authLayer, 64);
 
     memset(sendBuf,0x00,sizeof(sendBuf));
     
-//    if(num > 1)//多层权限
-//    {
-//        for(i=0;i<num;i++)
-//        {
-//            calcFloor(atoi(authLayer[i]),MANUAL_REG,sendBuf,tmpBuf);
-//            memcpy(sendBuf,tmpBuf,MAX_SEND_LEN);
-//        }        
-//    }
-//    else    //单层权限，直接呼默认权限楼层
-//    {
-//        floor = atoi(authLayer[0]);      
+    if(num > 1)//多层权限
+    {
+        for(i=0;i<num;i++)
+        {
+            calcFloor(authLayer[i],MANUAL_REG,sendBuf,tmpBuf);
+            memcpy(sendBuf,tmpBuf,MAX_SEND_LEN);
+        }        
+    }
+    else    //单层权限，直接呼默认权限楼层
+    {
+        floor = authLayer[0];      
 
-//        calcFloor(floor,AUTO_REG,sendBuf,tmpBuf);
-//        dbh("tmpBuf", tmpBuf, MAX_SEND_LEN);        
-//    }
-   
-    calcFloor(localUserData->defaultFloor,AUTO_REG,sendBuf,tmpBuf);
+        calcFloor(floor,AUTO_REG,sendBuf,tmpBuf);
+        dbh("tmpBuf", tmpBuf, MAX_SEND_LEN);        
+    }   
 
     memset(sendBuf,0x00,sizeof(sendBuf));
+    
     sendBuf[0] = CMD_STX;
-    sendBuf[1] = 0;//bsp_dipswitch_read();
+    sendBuf[1] = bsp_dipswitch_read();
     memcpy(sendBuf+2,tmpBuf,MAX_SEND_LEN-5);        
     sendBuf[MAX_SEND_LEN-1] = xorCRC(sendBuf,MAX_SEND_LEN-2);        
     memcpy(buff,sendBuf,MAX_SEND_LEN);  
 
-    dbh("sendBuf", sendBuf, MAX_SEND_LEN);
+    dbh("sendBuf", (char *)sendBuf, MAX_SEND_LEN);
     
     return result;
 }

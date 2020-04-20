@@ -22,12 +22,15 @@
  *----------------------------------------------*/
 #include "jsonUtils.h"
 #include "version.h"
+#include "calcDevNO.h"
 #include "bsp_rtc.h"
 #include "eth_cfg.h"
 #include "LocalData.h"
 #include "templateprocess.h"
 #include "malloc.h"
 #include "bsp_ds1302.h"
+
+
 
 
 /*----------------------------------------------*
@@ -69,7 +72,7 @@ SYSERRORCODE_E modifyJsonItem(const char *srcJson,const char *item,const char *v
     修改内容   : 新生成函数
 
 *****************************************************************************/
-SYSERRORCODE_E modifyJsonItem(const uint8_t *srcJson,const char *item,const char *value,uint8_t isSubitem,uint8_t *descJson)
+SYSERRORCODE_E modifyJsonItem(const uint8_t *srcJson,const uint8_t *item,const uint8_t *value,uint8_t isSubitem,uint8_t *descJson)
 {
     cJSON *root ,*dataObj;
     char *tmpBuf;
@@ -93,11 +96,11 @@ SYSERRORCODE_E modifyJsonItem(const uint8_t *srcJson,const char *item,const char
     {
         //根据协议，默认所有的子项是data
         dataObj = cJSON_GetObjectItem ( root, "data" );         
-        cJSON_AddStringToObject(dataObj,item,value);
+        cJSON_AddStringToObject(dataObj,(const char*)item,(const char*)value);
     }
     else
     {
-        cJSON_AddStringToObject(root,item,value);
+        cJSON_AddStringToObject(root,(const char*)item,(const char*)value);
     }  
 
     
@@ -141,10 +144,12 @@ SYSERRORCODE_E modifyJsonItem(const uint8_t *srcJson,const char *item,const char
     修改内容   : 新生成函数
 
 *****************************************************************************/
-uint8_t* GetJsonItem ( const uint8_t* jsonBuff,const char* item,uint8_t isSubitem)
+uint8_t* GetJsonItem ( const uint8_t* jsonBuff,const uint8_t* item,uint8_t isSubitem)
 {
 	static uint8_t value[JSON_ITEM_MAX_LEN] = {0};
 	cJSON* root,*json_item,*dataObj;
+	cJSON* arrayElement;
+    int tmpArrayNum = 0;
 	root = cJSON_Parse ( ( char* ) jsonBuff );    //解析数据包
 
 	if ( !root )
@@ -159,11 +164,11 @@ uint8_t* GetJsonItem ( const uint8_t* jsonBuff,const char* item,uint8_t isSubite
         {
             //根据协议，默认所有的子项是data
             dataObj = cJSON_GetObjectItem ( root, "data" );  
-            json_item = cJSON_GetObjectItem ( dataObj, item );
+            json_item = cJSON_GetObjectItem ( dataObj, (const char*)item );
         }
         else
         {
-            json_item = cJSON_GetObjectItem ( root, item );
+            json_item = cJSON_GetObjectItem ( root, (const char*)item );
         }  
 		
 		if ( json_item->type == cJSON_String )
@@ -174,13 +179,30 @@ uint8_t* GetJsonItem ( const uint8_t* jsonBuff,const char* item,uint8_t isSubite
 				memcpy ( value, json_item->valuestring,JSON_ITEM_MAX_LEN );
 			}
 
-			strcpy ((char *)value, (const char *)json_item->valuestring );
+			strcpy ( (char*)value, json_item->valuestring );
 //			log_d ( "json_item =  %s\r\n",json_item->valuestring );
 		}
 		else if ( json_item->type == cJSON_Number )
 		{
-			sprintf ((char *)value,"%d",json_item->valueint );
+			sprintf ( (char*)value,"%d",json_item->valueint );
 //			log_d ( "json_item =  %s\r\n",value);
+		}
+		else if( json_item->type == cJSON_Array )
+		{
+
+            //  2.日    期   : 2020年4月11日
+            //    作    者   :  
+            //    修改内容   : 添加对数组的支持，返回值还不完善    
+            tmpArrayNum = cJSON_GetArraySize(json_item);
+
+            for(int n=0;n<tmpArrayNum;n++)
+            {
+                arrayElement = cJSON_GetArrayItem(json_item, n);                 
+                strcpy ((char*)value, arrayElement->valuestring );
+            
+                log_d("cJSON_Array = %s\r\n",arrayElement->valuestring );
+            }
+
 		}
 		else
 		{
@@ -463,7 +485,7 @@ uint8_t packetPayload(LOCAL_USER_STRU *localUserData,uint8_t *descJson)
     SYSERRORCODE_E result = NO_ERR;
 	cJSON* root,*dataObj;
     char *tmpBuf;
-
+    char tmpTime[32] = {0};
 
     root = cJSON_CreateObject();
     dataObj = cJSON_CreateObject();
@@ -477,19 +499,23 @@ uint8_t packetPayload(LOCAL_USER_STRU *localUserData,uint8_t *descJson)
     }
 
     cJSON_AddStringToObject(root, "deviceCode", gMqttDevSn.sn);
+    log_d("deviceCode = %s",gMqttDevSn.sn);
+    
     cJSON_AddItemToObject(root, "data", dataObj);
 
-    if(localUserData->qrType == 4)
+    if(localUserData->qrType == 2 )
     {    
         cJSON_AddStringToObject(root, "commandCode","3007");
         cJSON_AddStringToObject(dataObj, "userId", (const char*)localUserData->userId);  
         cJSON_AddStringToObject(dataObj, "qrID", (const char*)localUserData->qrID); 
         cJSON_AddStringToObject(dataObj, "cardNo", (const char*)localUserData->cardNo);
-        cJSON_AddNumberToObject(dataObj, "callType", localUserData->authMode); 
+        cJSON_AddNumberToObject(dataObj, "callType",localUserData->authMode); 
         cJSON_AddNumberToObject(dataObj, "status", ON_LINE);   
-        cJSON_AddNumberToObject(dataObj, "type",CALL_OK);
-        cJSON_AddStringToObject(dataObj, "callElevatorTime",(const char*)bsp_ds1302_readtime());        
+        cJSON_AddNumberToObject(dataObj, "callState",CALL_OK);
+        strcpy(tmpTime,(const char*)bsp_ds1302_readtime());  
+        cJSON_AddStringToObject(dataObj, "callElevatorTime",tmpTime);        
         cJSON_AddStringToObject(dataObj, "timeStamp",(const char*)localUserData->timeStamp);
+        cJSON_AddNumberToObject(dataObj, "type",localUserData->qrType);
     }
     else
     {
@@ -555,42 +581,45 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
     if(data == NULL)
     {
         log_d("data NULL\r\n");
+        result = CJSON_GETITEM_ERR;
         cJSON_Delete(root);
-        return CJSON_GETITEM_ERR;
-        
+        return result;        
     }    
 
     templateData = cJSON_GetObjectItem(data, "template");
     if(templateMap == NULL)
     {
         log_d("templateData NULL\r\n");
+        result = CJSON_GETITEM_ERR;
         cJSON_Delete(root);
-        return CJSON_GETITEM_ERR;
-
+        return result;   
     }    
 
     templateMap = cJSON_GetObjectItem(templateData, "templateMap");
     if(templateMap == NULL)
     {
         log_d("templateMap NULL\r\n");
+        result = CJSON_GETITEM_ERR;
         cJSON_Delete(root);
-        return CJSON_GETITEM_ERR;
+        return result;   
     }
 
     holidayTimeMap = cJSON_GetObjectItem(templateData, "hoildayTimeMap");
     if(holidayTimeMap == NULL)
     {
         log_d("hoildayTimeMap NULL\r\n");
+        result = CJSON_GETITEM_ERR;
         cJSON_Delete(root);
-        return CJSON_GETITEM_ERR;
+        return result;   
     }
 
     peakTimeMap = cJSON_GetObjectItem(templateData, "peakTimeMap");
     if(peakTimeMap ==NULL)
     {
         log_d("peakTimeMap NULL\r\n");
+        result = CJSON_GETITEM_ERR;
         cJSON_Delete(root);
-        return CJSON_GETITEM_ERR;
+        return result;   
     }
 
 
@@ -603,12 +632,12 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
     log_d("templateParam->id = %d\r\n",templateParam->id);
 
     json_item = cJSON_GetObjectItem(templateMap, "templateCode");
-    strcpy((char*)templateParam->templateCode,(const char*)json_item->valuestring);
-    ef_set_env_blob("templateCode",templateParam->templateCode,strlen((const char*)templateParam->templateCode)); 
+    strcpy((char *)templateParam->templateCode,json_item->valuestring);
+    ef_set_env_blob("templateCode",templateParam->templateCode,strlen((const char *)templateParam->templateCode)); 
     log_d("templateParam->templateCode = %s\r\n",templateParam->templateCode);
 
     json_item = cJSON_GetObjectItem(templateMap, "templateName");
-    strcpy((char*)templateParam->templateName,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->templateName,json_item->valuestring);
 //    ef_set_env_blob("templateName",templateParam->templateName,strlen(templateParam->templateName)); 
     log_d("templateParam->templateName = %s\r\n",templateParam->templateName);    
 
@@ -620,7 +649,7 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
     log_d("templateParam->templateStatus = %d\r\n",templateParam->templateStatus);      
     
     json_item = cJSON_GetObjectItem(templateMap, "callingWay");
-    strcpy((char*)templateParam->callingWay,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->callingWay,json_item->valuestring);
     ef_set_env_blob("T_callingWay",templateParam->callingWay,strlen((const char*)templateParam->callingWay));     
     log_d("templateParam->callingWay = %s\r\n",templateParam->callingWay);    
 
@@ -633,57 +662,57 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
 
 
     json_item = cJSON_GetObjectItem(templateMap, "modeType");
-    strcpy((char*)templateParam->modeType,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->modeType,json_item->valuestring);
     ef_set_env_blob("modeType",templateParam->modeType,strlen((const char*)templateParam->modeType));     
     log_d("templateParam->modeType = %s\r\n",templateParam->modeType);
 
     json_item = cJSON_GetObjectItem(templateMap, "peakCallingWay");
-    strcpy((char*)templateParam->peakInfo[0].callingWay,(const char*)json_item->valuestring);
-    ef_set_env_blob("peakCallingWay",templateParam->peakInfo[0].callingWay,strlen((const char*)templateParam->peakInfo[0].callingWay));
+    strcpy((char *)templateParam->peakInfo[0].callingWay,json_item->valuestring);
+    ef_set_env_blob("peakCallingWay",templateParam->peakInfo[0].callingWay,strlen((const char *)templateParam->peakInfo[0].callingWay));
     log_d("templateParam->peakInfo[0].callingWay = %s\r\n",templateParam->peakInfo[0].callingWay);
 
     json_item = cJSON_GetObjectItem(templateMap, "peakStartDate");
-    strcpy((char*)templateParam->peakInfo[0].beginTime,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->peakInfo[0].beginTime,json_item->valuestring);
     ef_set_env_blob("peakStartDate",templateParam->peakInfo[0].beginTime,strlen((const char*)templateParam->peakInfo[0].beginTime));
     log_d("templateParam->peakInfo[0].beginTime = %s\r\n",templateParam->peakInfo[0].beginTime);
 
     json_item = cJSON_GetObjectItem(templateMap, "peakEndDate");
-    strcpy((char*)templateParam->peakInfo[0].endTime,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->peakInfo[0].endTime,json_item->valuestring);
     ef_set_env_blob("peakEndDate",templateParam->peakInfo[0].endTime,strlen((const char*)templateParam->peakInfo[0].endTime));
     log_d("templateParam->peakInfo[0].endTime = %s\r\n",templateParam->peakInfo[0].endTime);
 
     json_item = cJSON_GetObjectItem(templateMap, "peakHolidaysType");
-    strcpy((char*)templateParam->peakInfo[0].outsideTimeMode,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->peakInfo[0].outsideTimeMode,json_item->valuestring);
     ef_set_env_blob("peakHolidaysType",templateParam->peakInfo[0].outsideTimeMode,strlen((const char*)templateParam->peakInfo[0].outsideTimeMode));
     log_d("templateParam->peakInfo[0].outsideTimeMode = %s\r\n",templateParam->peakInfo[0].outsideTimeMode);
 
     json_item = cJSON_GetObjectItem(templateMap, "peakHolidays");
-    strcpy((char*)templateParam->peakInfo[0].outsideTimeData,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->peakInfo[0].outsideTimeData,json_item->valuestring);
     ef_set_env_blob("peakHolidays",templateParam->peakInfo[0].outsideTimeData,strlen((const char*)templateParam->peakInfo[0].outsideTimeData));
     log_d("templateParam->peakInfo[0].outsideTimeData = %s\r\n",templateParam->peakInfo[0].outsideTimeData);    
 //------------------------------------------------------------------------------
     json_item = cJSON_GetObjectItem(templateMap, "holidayCallingWay");
-    strcpy((char*)templateParam->hoildayInfo[0].callingWay,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->hoildayInfo[0].callingWay,json_item->valuestring);
     ef_set_env_blob("holidayCallingWay",templateParam->hoildayInfo[0].callingWay,strlen((const char*)templateParam->hoildayInfo[0].callingWay));
     log_d("templateParam->hoildayInfo[0].callingWay = %s\r\n",templateParam->hoildayInfo[0].callingWay);
 
     json_item = cJSON_GetObjectItem(templateMap, "holidayStartDate");
-    strcpy((char*)templateParam->hoildayInfo[0].beginTime,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->hoildayInfo[0].beginTime,json_item->valuestring);
     ef_set_env_blob("holidayStartDate",templateParam->hoildayInfo[0].beginTime,strlen((const char*)templateParam->hoildayInfo[0].beginTime));
     log_d("templateParam->hoildayInfo[0].beginTime = %s\r\n",templateParam->hoildayInfo[0].beginTime);
 
     json_item = cJSON_GetObjectItem(templateMap, "holidayEndDate");
-    strcpy((char*)templateParam->hoildayInfo[0].endTime,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->hoildayInfo[0].endTime,json_item->valuestring);
     ef_set_env_blob("holidayEndDate",templateParam->hoildayInfo[0].endTime,strlen((const char*)templateParam->hoildayInfo[0].endTime));
     log_d("templateParam->hoildayInfo[0].endTime = %s\r\n",templateParam->hoildayInfo[0].endTime);
 
     json_item = cJSON_GetObjectItem(templateMap, "holidayHolidaysType");
-    strcpy((char*)templateParam->hoildayInfo[0].outsideTimeMode,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->hoildayInfo[0].outsideTimeMode,json_item->valuestring);
     ef_set_env_blob("holidayHolidaysType",templateParam->hoildayInfo[0].outsideTimeMode,strlen((const char*)templateParam->hoildayInfo[0].outsideTimeMode));
     log_d("templateParam->hoildayInfo[0].outsideTimeMode = %s\r\n",templateParam->hoildayInfo[0].outsideTimeMode);
 
     json_item = cJSON_GetObjectItem(templateMap, "holidayHolidays");
-    strcpy((char*)templateParam->hoildayInfo[0].outsideTimeData,(const char*)json_item->valuestring);
+    strcpy((char *)templateParam->hoildayInfo[0].outsideTimeData,json_item->valuestring);
     ef_set_env_blob("holidayHolidays",templateParam->hoildayInfo[0].outsideTimeData,strlen((const char*)templateParam->hoildayInfo[0].outsideTimeData));
     log_d("templateParam->hoildayInfo[0].outsideTimeData = %s\r\n",templateParam->hoildayInfo[0].outsideTimeData);       
 
@@ -720,7 +749,7 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
         
         arrayElement = cJSON_GetObjectItem(tmpArray, "startTime");
         //因为节假日跟高峰共用，所以只记录到FLASH一种就可以了
-        strcpy((char *)templateParam->holidayMode[index].startTime,(const char*)arrayElement->valuestring);
+        strcpy((char*)templateParam->holidayMode[index].startTime,arrayElement->valuestring);
         sprintf(tmpIndex,"%d",index);
         strcpy(tmpKey,"hoildayModeStartTime");
         strcat(tmpKey,tmpIndex); 
@@ -729,7 +758,7 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
         
         
         arrayElement = cJSON_GetObjectItem(tmpArray, "endTime");
-        strcpy((char*)templateParam->holidayMode[index].endTime,(const char*)arrayElement->valuestring);  
+        strcpy((char*)templateParam->holidayMode[index].endTime,arrayElement->valuestring);  
         memset(tmpKey,0x00,sizeof(tmpKey));
         strcpy(tmpKey,"hoildayModeEndTime");
         strcat(tmpKey,tmpIndex);      
@@ -760,15 +789,18 @@ SYSERRORCODE_E saveTemplateParam(uint8_t *jsonBuff)
         
         arrayElement = cJSON_GetObjectItem(tmpArray, "endTime");
         log_d("endTime = %s\r\n",arrayElement->valuestring);        
-    }    
+    }
+    
  
     cJSON_Delete(root);
+
     log_d("saveTemplateParam took %d ms to save\r\n",xTaskGetTickCount()-curtick);
+
     return result;
 }
 
 
-
+#if 0
 uint8_t parseQrCode(uint8_t *jsonBuff,QRCODE_INFO_STRU *qrCodeInfo)
 {
     cJSON *root ,*devArray,*tagFloorArray,*tmpArray;
@@ -850,23 +882,23 @@ uint8_t parseQrCode(uint8_t *jsonBuff,QRCODE_INFO_STRU *qrCodeInfo)
     log_d("qrCodeInfo->type= %d\r\n",qrCodeInfo->type); 
     
     tmpArray = cJSON_GetObjectItem(root, "sT");
-    strcpy((char*)qrCodeInfo->startTime,tmpArray->valuestring);
+    strcpy(qrCodeInfo->startTime,tmpArray->valuestring);
     log_d("qrCodeInfo->startTime= %s\r\n",qrCodeInfo->startTime); 
 
     tmpArray = cJSON_GetObjectItem(root, "eT");
-    strcpy((char*)qrCodeInfo->endTime,tmpArray->valuestring);
+    strcpy(qrCodeInfo->endTime,tmpArray->valuestring);
     log_d("qrCodeInfo->endTime= %s\r\n",qrCodeInfo->endTime); 
 
     tmpArray = cJSON_GetObjectItem(root, "qS");
-    strcpy((char*)qrCodeInfo->qrStarttimeStamp,tmpArray->valuestring);
+    strcpy(qrCodeInfo->qrStarttimeStamp,tmpArray->valuestring);
     log_d("qrCodeInfo->qrStarttimeStamp= %s\r\n",qrCodeInfo->qrStarttimeStamp); 
     
     tmpArray = cJSON_GetObjectItem(root, "qE");
-    strcpy((char*)qrCodeInfo->qrEndtimeStamp,tmpArray->valuestring);
+    strcpy(qrCodeInfo->qrEndtimeStamp,tmpArray->valuestring);
     log_d("qrCodeInfo->qrEndtimeStamp= %s\r\n",qrCodeInfo->qrEndtimeStamp); 
     
-    tmpArray = cJSON_GetObjectItem(root, "qrId");
-    strcpy((char*)qrCodeInfo->qrID,tmpArray->valuestring);
+    tmpArray = cJSON_GetObjectItem(root, "qI");
+    strcpy(qrCodeInfo->qrID,tmpArray->valuestring);
     log_d("qrCodeInfo->qrID= %s\r\n",qrCodeInfo->qrID); 
     
     cJSON_Delete(root);
@@ -874,6 +906,190 @@ uint8_t parseQrCode(uint8_t *jsonBuff,QRCODE_INFO_STRU *qrCodeInfo)
     return isFind;
 
 }
+#endif
+
+uint8_t parseQrCode(uint8_t *jsonBuff,QRCODE_INFO_STRU *qrCodeInfo)
+{
+    cJSON *root ,*tmpArray;
+    uint8_t buf[300] = {0};
+    uint8_t isFind = 0;
+    
+    if(!jsonBuff || !qrCodeInfo)
+    {
+        cJSON_Delete(root);
+        log_d("error json data\r\n");
+        return STR_EMPTY_ERR;
+    }    
+    
+    root = cJSON_Parse((char *)jsonBuff);    //解析数据包
+    if (!root)  
+    {  
+        cJSON_Delete(root);
+        log_d("Error before: [%s]\r\n",cJSON_GetErrorPtr());  
+        return CJSON_PARSE_ERR;
+    } 
+
+
+    tmpArray = cJSON_GetObjectItem(root, "qS");
+    strcpy((char *)qrCodeInfo->startTime,tmpArray->valuestring);
+    log_d("qrCodeInfo->startTime= %s\r\n",qrCodeInfo->startTime); 
+    
+    tmpArray = cJSON_GetObjectItem(root, "qE");
+    strcpy((char *)qrCodeInfo->endTime,tmpArray->valuestring);
+    log_d("qrCodeInfo->endTime= %s\r\n",qrCodeInfo->endTime); 
+    
+    tmpArray = cJSON_GetObjectItem(root, "qI");
+    strcpy((char *)qrCodeInfo->qrID,tmpArray->valuestring);
+    log_d("qrCodeInfo->qrID= %s\r\n",qrCodeInfo->qrID); 
+
+    tmpArray = cJSON_GetObjectItem(root, "t");
+    qrCodeInfo->type = tmpArray->valueint;
+    log_d("qrCodeInfo->type= %d\r\n",qrCodeInfo->type); 
+    
+    tmpArray = cJSON_GetObjectItem(root, "f1");
+    memcpy(qrCodeInfo->accessFloor,parseAccessFloor((uint8_t *)tmpArray->valuestring),FLOOR_ARRAY_LENGTH);
+
+    dbh("qrCodeInfo->accessFloor",qrCodeInfo->accessFloor,64);
+
+    qrCodeInfo->defaultFloor = qrCodeInfo->accessFloor[0];
+    log_d("qrCodeInfo->defaultFloor = %d\r\n",qrCodeInfo->defaultFloor);
+    
+    memset(buf,0x00,sizeof(buf));
+    tmpArray = cJSON_GetObjectItem(root, "d1");
+    strcpy((char *)buf,tmpArray->valuestring);
+    log_d("d1 = %s\r\n",buf);  
+    if(findDev(buf,1) == 1)
+    {
+        isFind =1;
+        goto QR_END;
+    }
+
+    memset(buf,0x00,sizeof(buf));
+    tmpArray = cJSON_GetObjectItem(root, "d2");
+    strcpy((char *)buf,tmpArray->valuestring);
+    log_d("d2 = %s\r\n",buf); 
+    if(findDev(buf,2) == 1)
+    {
+        isFind =1;
+        goto QR_END;
+    }
+    
+    memset(buf,0x00,sizeof(buf));
+    tmpArray = cJSON_GetObjectItem(root, "d3");
+    strcpy((char *)buf,tmpArray->valuestring);
+    log_d("d3= %s\r\n",buf); 
+    if(findDev(buf,3) == 1)
+    {
+        isFind =1;
+        goto QR_END;
+    }
+
+    
+    memset(buf,0x00,sizeof(buf));
+    tmpArray = cJSON_GetObjectItem(root, "d4");
+    strcpy((char *)buf,tmpArray->valuestring);
+    log_d("d4 = %s\r\n",buf);
+    if(findDev(buf,4) == 1)
+    {
+        isFind =1;
+        goto QR_END;
+    }    
+
+
+    memset(buf,0x00,sizeof(buf));
+    tmpArray = cJSON_GetObjectItem(root, "d5");
+    strcpy((char *)buf,tmpArray->valuestring);
+    log_d("d5 = %s\r\n",buf);
+    if(findDev(buf,5) == 1)
+    {
+       isFind =1;
+    }    
+  
+QR_END:    
+    cJSON_Delete(root);
+    
+    return isFind;
+
+}
+
+
+
+
+uint8_t** GetJsonArray ( const uint8_t* jsonBuff,const uint8_t* item,uint8_t *num)
+{
+    uint8_t** result; 
+    cJSON* root,*json_item,*dataObj;
+    cJSON* arrayElement;
+    int tmpArrayNum = 0;
+    int i = 0;
+    
+    root = cJSON_Parse ( ( char* ) jsonBuff );    //解析数据包
+    
+    if ( !root )
+    {
+        log_d ( "Error before: [%s]\r\n",cJSON_GetErrorPtr() );
+        cJSON_Delete(root);
+        return NULL;
+    }
+    else
+    {
+        //根据协议，默认所有的子项是data
+        dataObj = cJSON_GetObjectItem ( root, "data" );  
+        json_item = cJSON_GetObjectItem ( dataObj, (const char*)item );        
+
+        if( json_item->type == cJSON_Array )
+        {
+            tmpArrayNum = cJSON_GetArraySize(json_item);
+
+            //每个人最多20张卡
+            if(tmpArrayNum > 20)
+            {
+                tmpArrayNum = 20;
+            }
+
+            result = (uint8_t **)my_malloc(tmpArrayNum*sizeof(uint8_t *));
+
+            if(result == NULL)
+            {
+                log_d("create array error\r\n");
+                cJSON_Delete(root);
+                return NULL;                
+            }
+
+            *num = tmpArrayNum;
+            
+            for (i = 0; i < tmpArrayNum; i++)
+            {
+                result[i] = (uint8_t *)my_malloc(8 * sizeof(uint8_t));
+            }            
+
+            for(i=0;i<tmpArrayNum;i++)
+            {
+                arrayElement = cJSON_GetArrayItem(json_item, i);                 
+                strcpy ((char*)result[i], arrayElement->valuestring ); 
+                log_d("result :%d = %s\r\n",i,result[i]); 
+            }
+
+        }
+        else
+        {
+            log_d ( "can't parse json buff\r\n" );
+            cJSON_Delete(root);
+            return NULL;
+        }
+
+    }
+
+    for (i = 0; i < tmpArrayNum; i++)
+    {
+        my_free(result[i]);
+    }     
+    my_free(result);        
+    
+    cJSON_Delete(root);
+    return result;
+}
+
 
 
 

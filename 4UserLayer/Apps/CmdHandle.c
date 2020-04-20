@@ -35,6 +35,7 @@
 #include "eth_cfg.h"
 #include "bsp_ds1302.h"
 #include "LocalData.h"
+#include "templateprocess.h"
 
 
 #define LOG_TAG    "CmdHandle"
@@ -61,6 +62,7 @@ int	gMySock = 0;
 uint8_t gUpdateDevSn = 0; 
 
 uint32_t gCurTick = 0;
+uint8_t gDeviceStateFlag = DEVICE_ENABLE;
 
 
 
@@ -79,7 +81,7 @@ static SYSERRORCODE_E SetJudgeMode ( uint8_t* msgBuf ); //设置识别模式
 static SYSERRORCODE_E GetDevInfo ( uint8_t* msgBuf ); //获取设备信息
 static SYSERRORCODE_E GetTemplateParam ( uint8_t* msgBuf ); //获取模板参数
 static SYSERRORCODE_E GetServerIp ( uint8_t* msgBuf ); //获取模板参数
-static SYSERRORCODE_E downLoadCardNo ( uint8_t* msgBuf ); //获取用户信息
+static SYSERRORCODE_E GetUserInfo ( uint8_t* msgBuf ); //获取用户信息
 static SYSERRORCODE_E RemoteOptDev ( uint8_t* msgBuf ); //远程呼梯
 static SYSERRORCODE_E PCOptDev ( uint8_t* msgBuf ); //PC端呼梯
 static SYSERRORCODE_E ClearUserInof ( uint8_t* msgBuf ); //删除用户信息
@@ -91,7 +93,7 @@ static SYSERRORCODE_E DelCard( uint8_t* msgBuf ); //删除卡号
 static SYSERRORCODE_E DelUserId( uint8_t* msgBuf ); //删除用户
 static SYSERRORCODE_E getRemoteTime ( uint8_t* msgBuf );//获取远程服务器时间
 
-//static SYSERRORCODE_E ReturnDefault ( uint8_t* msgBuf ); //返回默认消息
+static SYSERRORCODE_E ReturnDefault ( uint8_t* msgBuf ); //返回默认消息
 
 
 typedef SYSERRORCODE_E ( *cmd_fun ) ( uint8_t *msgBuf ); 
@@ -118,7 +120,7 @@ CMD_HANDLE_T CmdList[] =
 	{"3001", SetLocalSn},
     {"3002", GetServerIp},
     {"3003", GetTemplateParam},
-    {"4004", downLoadCardNo},   
+    {"3004", GetUserInfo},   
     {"3005", RemoteOptDev},        
     {"3006", ClearUserInof},   
     {"3009", UnbindDev},  
@@ -162,7 +164,7 @@ void Proscess(void* data)
     char cmd[8+1] = {0};
     log_d("Start parsing JSON data\r\n");
     
-    strcpy(cmd,(const char *)GetJsonItem ( data, ( const char* ) "commandCode",0 ));   
+    strcpy(cmd,(const char *)GetJsonItem ( data, ( const uint8_t* ) "commandCode",0 ));   
     
     exec_proc (cmd ,data);
 }
@@ -323,48 +325,82 @@ SYSERRORCODE_E AbnormalAlarm ( uint8_t* msgBuf )
 static SYSERRORCODE_E DelUserId( uint8_t* msgBuf )
 {
 	SYSERRORCODE_E result = NO_ERR;
-//    uint8_t buf[MQTT_TEMP_LEN] = {0};
-//    uint8_t userId[CARD_USER_LEN] = {0};
-//    uint16_t len = 0;
-//    
-//    USERDATA_STRU userData = {0};
-//    memset(&userData,0x00,sizeof(USERDATA_STRU));    
+    uint8_t buf[MQTT_TEMP_LEN] = {0};
+    uint8_t userId[CARD_USER_LEN] = {0};
+    uint8_t tmp[CARD_USER_LEN] = {0};
+    uint16_t len = 0;
+    uint8_t rRet=1;
+    uint8_t wRet=1;
+    
+    USERDATA_STRU userData = {0};
+    memset(&userData,0x00,sizeof(USERDATA_STRU));    
 
-//    if(!msgBuf)
-//    {
-//        return STR_EMPTY_ERR;
-//    }
+    if(!msgBuf)
+    {
+        return STR_EMPTY_ERR;
+    }
 
-//    //1.保存卡号和用户ID
-//    strcpy((char *)userId,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
-//    log_d("userId = %s\r\n",userId);
+    //1.保存卡号和用户ID
 
-//    log_d("=================================\r\n");
-//    len = readUserData(userId,USER_MODE,&userData);
+//  2.日    期   : 2020年4月13日
+//    作    者   :  
+//    修改内容   : 这里返回人员ID 数组，是可以批量删除人员的
+    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
+    sprintf((char *)userId,"%08s",tmp);
+    log_d("userId = %s\r\n",userId);
 
-//    log_d("ret = %d\r\n",len);    
-//    log_d("userData.userState = %d\r\n",userData.userState);
-//    log_d("userData.cardNo = %s\r\n",userData.cardNo);
-//    log_d("userData.userId = %s\r\n",userData.userId);
-//    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
-//    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
-//    log_d("userData.startTime = %s\r\n",userData.startTime);
+    log_d("=================================\r\n");
+    rRet = readUserData(userId,USER_MODE,&userData);
+
+    log_d("ret = %d\r\n",rRet);    
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
 
 
-//    userData.userState = USER_DEL; //设置卡状态为0，删除卡
-//    len = modifyUserData(userData,USER_MODE);
+    if(rRet == 0)
+    {
+        userData.head = TABLE_HEAD;
+        userData.userState = USER_DEL; //设置卡状态为0，删除卡
+        wRet = modifyUserData(userData,USER_MODE);
+    }
 
-//    log_d("=================================\r\n");
+    if(wRet ==0)
+    {
+        //响应服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
+    }
+    else
+    {
+        //包括没有该条记录和其它错误
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"0",1,buf);
+    }  
 
-//    memset(&userData,0x00,sizeof(userData));
-//    len = readUserData(userId,USER_MODE,&userData);
-//    log_d("ret = %d\r\n",len);    
-//    log_d("userData.userState = %d\r\n",userData.userState);
-//    log_d("userData.cardNo = %s\r\n",userData.cardNo);
-//    log_d("userData.userId = %s\r\n",userData.userId);
-//    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
-//    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
-//    log_d("userData.startTime = %s\r\n",userData.startTime);
+    if(result != NO_ERR)
+    {
+        return result;
+    }
+
+    len = strlen((const char*)buf);
+
+    mqttSendData(buf,len);    
+
+    log_d("=================================\r\n");
+
+    memset(&userData,0x00,sizeof(userData));
+    len = readUserData(userId,USER_MODE,&userData);
+    log_d("ret = %d\r\n",len);    
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
     
     return result;
 
@@ -377,6 +413,7 @@ SYSERRORCODE_E AddCardNo ( uint8_t* msgBuf )
 
     uint8_t buf[MQTT_TEMP_LEN] = {0};
     uint8_t cardNo[CARD_USER_LEN] = {0};
+    uint8_t userId[CARD_USER_LEN] = {0};
     uint16_t len = 0;  
     USERDATA_STRU userData = {0};  
     uint8_t ret = 0;
@@ -390,52 +427,163 @@ SYSERRORCODE_E AddCardNo ( uint8_t* msgBuf )
     memset(&userData,0x00,sizeof(USERDATA_STRU));   
 
     //1.保存用户ID
-//    memset(userId,0x00,sizeof(userId));
-//    strcpy((char *)userId,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
-//    sprintf(userData.userId,"%08s",userId);
-//    log_d("userData.userId = %s,len = %d\r\n",userData.userId,strlen(userData.userId));
+    memset(userId,0x00,sizeof(userId));
+    strcpy((char *)userId,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
+    sprintf((char*)userData.userId,"%08s",userId);
+    log_d("userData.userId = %s,len = %d\r\n",userData.userId,strlen((const char*)userData.userId));
 
     //2.保存卡号
     memset(cardNo,0x00,sizeof(cardNo));
-    strcpy((char *)cardNo,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const char *)"cardNo",1));
-    sprintf((char *)userData.cardNo,"%08s",cardNo);    
-    log_d("userData.cardNo = %s,len = %d\r\n",userData.cardNo,strlen((const char *)userData.cardNo));
+    strcpy((char *)cardNo,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"cardNo",1));
+//    sprintf(userData.cardNo,"%08s",cardNo);
+    log_d("cardNo = %s,len = %d\r\n",cardNo,strlen((const char*)cardNo));
 
-//    log_d("=================================\r\n");
-//    ret  = readUserData(userId,USER_MODE,&userData);
+    log_d("=================================\r\n");
+    ret  = readUserData(userData.userId,USER_MODE,&userData);
+    log_d("ret = %d\r\n",ret);    
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
+
+    if(ret == 0)
+    {
+        sprintf((char*)userData.cardNo,"%08s",cardNo);
+        userData.head = TABLE_HEAD;
+        userData.cardState = CARD_VALID;
+        ret = writeUserData(userData,CARD_MODE);  
+    }
 
     if(ret == 0)
     {
         //影响服务器
-        result = modifyJsonItem((const uint8_t *)msgBuf,(const char *)"status","1",1,buf);
-        result = modifyJsonItem((const uint8_t *)buf,(const char *)"reason","success",1,buf);
-        
-        if(result != NO_ERR)
-        {
-            return result;
-        }
-        
-        len = strlen((const char*)buf);
-        
-        mqttSendData(buf,len);   
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","1",1,buf);
+        result = modifyJsonItem((const uint8_t *)buf,(const uint8_t *)"reason","success",1,buf);
+    }
+    else
+    {
+        //影响服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","0",1,buf);
+        result = modifyJsonItem((const uint8_t *)buf,(const uint8_t *)"reason","add error",1,buf);
+    }
 
+    
+    if(result != NO_ERR)
+    {
+        return result;
     }
     
-    log_d("ret = %d\r\n",len);    
-    log_d("userData.userState = %d\r\n",userData.cardState);
+    len = strlen((const char*)buf);
+    
+    mqttSendData(buf,len); 
+
+    ret  = readUserData(userData.cardNo,CARD_MODE,&userData);
+    log_d("ret = %d\r\n",ret);    
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
     log_d("userData.cardNo = %s\r\n",userData.cardNo);
-    log_d("userData.startTime = %s\r\n",userData.startTime);
-
-    strcpy((char *)userData.cardNo,(const char *)cardNo);
-
-    writeUserData(userData,CARD_MODE);    
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);    
+  
 	return result;
 }
 
+//1013 删除人员的所有卡
 SYSERRORCODE_E DelCardNo ( uint8_t* msgBuf )
 {
 	SYSERRORCODE_E result = NO_ERR;
+    uint8_t buf[MQTT_TEMP_LEN] = {0};
+    uint8_t userId[CARD_USER_LEN] = {0};
+    uint8_t tmp[CARD_USER_LEN] = {0};
+    uint16_t len = 0;
+    uint8_t rRet=1;
+    uint8_t wRet=1;
+    uint8_t num=0;
+    int i = 0;  
+    uint8_t **cardArray;
+    
+    USERDATA_STRU userData = {0};
+    memset(&userData,0x00,sizeof(USERDATA_STRU));    
 
+    if(!msgBuf)
+    {
+        return STR_EMPTY_ERR;
+    }
+
+    cardArray = (uint8_t **)my_malloc(20 * sizeof(uint8_t *));
+    
+    for (i = 0; i < 20; i++)
+    {
+        cardArray[i] = (uint8_t *)my_malloc(8 * sizeof(uint8_t));
+    }  
+
+    if(cardArray == NULL)
+    {
+        return STR_EMPTY_ERR;
+    }
+
+    //1.保存卡号和用户ID
+    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
+    sprintf((char *)userId,"%08s",tmp);
+    log_d("userId = %s\r\n",userId);
+
+    cardArray = GetJsonArray ((const uint8_t *)msgBuf,(const uint8_t *)"cardNo",&num);
+    
+    log_d("array num =%d\r\n",num); 
+    
+    //删除USERID
+    //wRet = delUserData(userId,USER_MODE);
+    
+    //删除CARDNO
+    for(i=0; i<num;i++)
+    {
+        wRet = delUserData(cardArray[i],CARD_MODE);
+        log_d("cardArray %d = %s\r\n",i,cardArray[i]);        
+    }
+    
+    
+    //2.查询以卡号为ID的记录，并删除
+    if(wRet ==0)
+    {
+        //响应服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
+    }
+    else
+    {
+        //包括没有该条记录和其它错误
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"0",1,buf);
+    }  
+
+    if(result != NO_ERR)
+    {
+        return result;
+    }
+
+    len = strlen((const char*)buf);
+
+    mqttSendData(buf,len);    
+
+    log_d("=================================\r\n");  
+    
+    memset(&userData,0x00,sizeof(userData));
+    rRet = readUserData(userId,USER_MODE,&userData);
+    log_d("ret = %d\r\n",rRet);    
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
+
+
+
+    
     return result;
 }
 
@@ -450,10 +598,10 @@ SYSERRORCODE_E UpgradeDev ( uint8_t* msgBuf )
     }
 
     //1.保存URL
-    strcpy((char *)tmpUrl,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"softwareUrl",1));
+    strcpy((char *)tmpUrl,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"softwareUrl",1));
     log_d("tmpUrl = %s\r\n",tmpUrl);
     
-    ef_set_env("url", (const char*)GetJsonItem((const uint8_t *)tmpUrl,(const char *)"picUrl",0)); 
+    ef_set_env("url", (const char*)GetJsonItem((const uint8_t *)tmpUrl,(const uint8_t *)"picUrl",0)); 
 
     //2.设置升级状态为待升级状态
     ef_set_env("up_status", "101700");
@@ -537,7 +685,9 @@ SYSERRORCODE_E EnableDev ( uint8_t* msgBuf )
     if(result != NO_ERR)
     {
         return result;
-    }
+    }    
+
+     SaveDevState(DEVICE_ENABLE);
 
     //这里需要发消息到消息队列，启用
     SendToQueue(type,strlen((const char*)type),AUTH_MODE_BIND);
@@ -573,6 +723,8 @@ SYSERRORCODE_E DisableDev ( uint8_t* msgBuf )
         return result;
     }
 
+    SaveDevState(DEVICE_DISABLE);
+    
     //这里需要发消息到消息队列，禁用
     SendToQueue(type,strlen((const char*)type),AUTH_MODE_UNBIND);
     
@@ -624,12 +776,74 @@ SYSERRORCODE_E GetDevInfo ( uint8_t* msgBuf )
 	return result;
 
 }
-
-//删除卡号
+ 
+//删除卡号  单卡删除
 static SYSERRORCODE_E DelCard( uint8_t* msgBuf )
 {
 	SYSERRORCODE_E result = NO_ERR;
+	uint8_t rRet = 1;
+	uint8_t wRet = 1;
+    uint8_t buf[MQTT_TEMP_LEN] = {0};
+    uint8_t cardNo[CARD_USER_LEN] = {0};
+    uint8_t userId[CARD_USER_LEN] = {0};
+    uint8_t tmp[CARD_USER_LEN] = {0};
+    uint16_t len = 0;
+    
+    USERDATA_STRU userData = {0};
+    memset(&userData,0x00,sizeof(USERDATA_STRU));    
 
+    if(!msgBuf)
+    {
+        return STR_EMPTY_ERR;
+    }
+
+    //1.获取卡号和用户ID
+    memset(tmp,0x00,sizeof(tmp));
+    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));   
+    sprintf((char *)userId,"%08s",tmp); 
+    log_d("userId = %s\r\n",userId);
+
+    memset(tmp,0x00,sizeof(tmp));
+    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"cardNo",1));
+    sprintf((char *)cardNo,"%08s",tmp);   
+    
+    log_d("cardNo = %s，userId = %s\r\n",cardNo,userId);
+
+    wRet = delUserData(cardNo,CARD_MODE);
+    
+    //2.查询以卡号为ID的记录，并删除
+    if(wRet ==0)
+    {
+        //响应服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
+    }
+    else
+    {
+        //包括没有该条记录和其它错误
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"0",1,buf);
+    }  
+
+    if(result != NO_ERR)
+    {
+        return result;
+    }
+
+    len = strlen((const char*)buf);
+
+    mqttSendData(buf,len);    
+
+    log_d("=================================\r\n");
+
+    memset(&userData,0x00,sizeof(userData));
+    rRet = readUserData(cardNo,CARD_MODE,&userData);
+    log_d("ret = %d\r\n",rRet); 
+    log_d("userData.cardState = %d\r\n",userData.cardState);    
+    log_d("userData.userState = %d\r\n",userData.userState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
     
 	return result;
 
@@ -686,11 +900,11 @@ static SYSERRORCODE_E GetServerIp ( uint8_t* msgBuf )
     }
 
     //1.保存IP     
-    strcpy((char *)ip,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const char *)"ip",1));
+    strcpy((char *)ip,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"ip",1));
     log_d("server ip = %s\r\n",ip);
 
     //影响服务器
-    result = modifyJsonItem((const uint8_t *)msgBuf,(const char *)"status",(const char *)"1",1,buf);
+    result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
 
     if(result != NO_ERR)
     {
@@ -706,17 +920,18 @@ static SYSERRORCODE_E GetServerIp ( uint8_t* msgBuf )
 }
 
 //获取用户信息
-static SYSERRORCODE_E downLoadCardNo ( uint8_t* msgBuf )
+static SYSERRORCODE_E GetUserInfo ( uint8_t* msgBuf )
 {
 	SYSERRORCODE_E result = NO_ERR;
 	uint16_t len =0;
     uint8_t buf[512] = {0};
     USERDATA_STRU tempUserData = {0};
-    uint8_t ret = 0;
+    uint8_t ret = 1;
     uint8_t tmp[128] = {0};
     char *multipleCard[20] = {0};
     int multipleCardNum = 0;
 
+    
     memset(&tempUserData,0x00,sizeof(USERDATA_STRU));
 
     if(!msgBuf)
@@ -725,23 +940,34 @@ static SYSERRORCODE_E downLoadCardNo ( uint8_t* msgBuf )
     }
 
     tempUserData.head = TABLE_HEAD;
-    tempUserData.cardState = CARD_VALID;  
 
-    //1.存储ownerid
-    strcpy((char *)tempUserData.ownerId,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"ownerId",1));
-    log_d("tempUserData.ownerId = %s\r\n",tempUserData.ownerId);  
+    //1.保存以userID为key的表
+    memset(tmp,0x00,sizeof(tmp));
+    strcpy((char *)tmp,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
+    sprintf((char *)tempUserData.userId,"%08s",tmp);
+    log_d("tempUserData.userId = %s,len = %d\r\n",tempUserData.userId,strlen((const char *)tempUserData.userId));
     
-    //2.保存开始时间
-    strcpy((char *)tempUserData.startTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"startTime",1));
+    //3.保存楼层权限
+    strcpy((char *)tempUserData.accessFloor,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"accessLayer",1));
+    log_d("tempUserData.accessFloor = %s\r\n",tempUserData.accessFloor);
+
+    //4.保存默认楼层
+    memset(tmp,0x00,sizeof(tmp));
+    strcpy((char *)tmp,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"defaultLayer",1));
+    tempUserData.defaultFloor = atoi((const char*)tmp);
+    log_d("tempUserData.defaultFloor = %d\r\n",tempUserData.defaultFloor);
+
+    //5.保存开始时间
+    strcpy((char *)tempUserData.startTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"startTime",1));
     log_d("tempUserData.startTime = %s\r\n",tempUserData.startTime);
     
-    //3.保存结束时间
-    strcpy((char *)tempUserData.endTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"endTime",1));
+    //6.保存结束时间
+    strcpy((char *)tempUserData.endTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"endTime",1));
     log_d("tempUserData.endTime = %s\r\n",tempUserData.endTime);
 
     //2.保存卡号
     memset(tmp,0x00,sizeof(tmp));
-    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const char *)"cardNo",1));
+    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"cardNo",1));
 
     if(strlen((const char *)tmp) > CARD_NO_LEN)
     {
@@ -758,26 +984,63 @@ static SYSERRORCODE_E downLoadCardNo ( uint8_t* msgBuf )
     if(multipleCardNum > 1)
     {
         for(len=0;len<multipleCardNum;len++)
-        {               
+        {
+            tempUserData.cardState = CARD_VALID;     
             memset(tempUserData.cardNo,0x00,sizeof(tempUserData.cardNo));
             memcpy(tempUserData.cardNo,multipleCard[len],CARD_USER_LEN);    
             log_d("multipleCard[len] = %s,tempUserData.cardNo= %s\r\n",multipleCard[len],tempUserData.cardNo);            
-            writeUserData(tempUserData,CARD_MODE);
+            ret = writeUserData(tempUserData,CARD_MODE);
+
+            if(ret != 0)
+            {
+                result = FLASH_W_ERR;
+            }
+
         }
     }
     else
     {
         if(memcmp(tempUserData.cardNo,"00000000",CARD_USER_LEN) != 0)
         {
-            writeUserData(tempUserData,CARD_MODE);
-            log_d("write card id = %d\r\n",ret);           
+            tempUserData.cardState = CARD_VALID;
+            ret = writeUserData(tempUserData,CARD_MODE);
+               
+            if(ret != 0)
+            {
+                result = FLASH_W_ERR;
+            }   
+
+            log_d("write card id is success! ret = %d\r\n",ret);
         }
-    }  
+    }
 
-    //影响服务器
-    result = modifyJsonItem((const uint8_t *)msgBuf,(const char *)"status","1",1,buf);
+    //全0的USER ID不记录
+    if(memcmp(tempUserData.userId,"00000000",CARD_USER_LEN) != 0)
+    {
+        tempUserData.userState = USER_VALID;
+        ret = writeUserData(tempUserData,USER_MODE);
+        log_d("write user id = %d\r\n",ret); 
+        if(ret != 0)
+        {
+            result = FLASH_W_ERR;
+        }        
+    } 
 
+    
+    if(result == NO_ERR)
+    {
+        //影响服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","1",1,buf);
+        result = modifyJsonItem((const uint8_t *)buf,(const uint8_t *)"reason","success",1,buf);
+    }
+    else
+    {
+        //影响服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","0",1,buf);
+        result = modifyJsonItem((const uint8_t *)buf,(const uint8_t *)"reason","error",1,buf);
+    }
 
+    
     if(result != NO_ERR)
     {
         return result;
@@ -804,25 +1067,27 @@ static SYSERRORCODE_E RemoteOptDev ( uint8_t* msgBuf )
         return STR_EMPTY_ERR;
     }
 
-    
-    strcpy((char *)accessFloor,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"accessLayer",1));
-
-    result = modifyJsonItem(msgBuf,"status","1",1,buf);
-
-    if(result != NO_ERR)
+    if(gTemplateParam.templateCallingWay.isFace && gDeviceStateFlag == DEVICE_ENABLE)
     {
-        return result;
-    }
-    
+        strcpy((char *)accessFloor,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"accessLayer",1));
 
-    //这里需要发消息到消息队列，进行呼梯
-    SendToQueue(accessFloor,strlen((const char*)accessFloor),AUTH_MODE_REMOTE);
+        result = modifyJsonItem(msgBuf,"status","1",1,buf);
 
-    len = strlen((const char*)buf);
+        if(result != NO_ERR)
+        {
+            return result;
+        }
+        
 
-    log_d("RemoteOptDev len = %d,buf = %s\r\n",len,buf);
+        //这里需要发消息到消息队列，进行呼梯
+        SendToQueue(accessFloor,strlen((const char*)accessFloor),AUTH_MODE_REMOTE);
 
-    mqttSendData(buf,len);     
+        len = strlen((const char*)buf);
+
+        log_d("RemoteOptDev len = %d,buf = %s\r\n",len,buf);
+
+        mqttSendData(buf,len); 
+    }    
     
     return result;
 
@@ -845,7 +1110,7 @@ static SYSERRORCODE_E PCOptDev ( uint8_t* msgBuf )
     }
 
     
-    strcpy((char *)purposeLayer,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"purposeLayer",1));
+    strcpy((char *)purposeLayer,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"purposeLayer",1));
 
     result = modifyJsonItem(msgBuf,"status","1",1,buf);
 
@@ -876,31 +1141,51 @@ static SYSERRORCODE_E PCOptDev ( uint8_t* msgBuf )
 //    
 //    writeUserData(userData,CARD_MODE);
 //    
-//    log_d("===============TEST==================\r\n");
-//    len = readUserData("89E1E35D",CARD_MODE,&userData);
+    log_d("===============TEST==================\r\n");
+    len = readUserData("12345688",CARD_MODE,&userData);
 
-//    log_d("ret = %d\r\n",len);    
-//    log_d("userData.userState = %d\r\n",userData.cardState);
-//    log_d("userData.cardNo = %s\r\n",userData.cardNo);
-//    log_d("userData.userId = %s\r\n",userData.userId);
-//    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
-//    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
-//    log_d("userData.startTime = %s\r\n",userData.startTime);
+    log_d("ret = %d\r\n",len);    
+    log_d("userData.userState = %d\r\n",userData.cardState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
 
-//    log_d("===============TEST==================\r\n");
-//    memset(&userData,0x00,sizeof(USERDATA_STRU));
-//    len = readUserData("00002815",USER_MODE,&userData);
-//    
-//    log_d("ret = %d\r\n",len);    
-//    log_d("userData.userState = %d\r\n",userData.cardState);
-//    log_d("userData.cardNo = %s\r\n",userData.cardNo);
-//    log_d("userData.userId = %s\r\n",userData.userId);
-//    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
-//    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
-//    log_d("userData.startTime = %s\r\n",userData.startTime);
+    log_d("===============TEST==================\r\n");
+    memset(&userData,0x00,sizeof(USERDATA_STRU));
+    len = readUserData("00020419",USER_MODE,&userData);
+    
+    log_d("ret = %d\r\n",len);    
+    log_d("userData.userState = %d\r\n",userData.cardState);
+    log_d("userData.cardNo = %s\r\n",userData.cardNo);
+    log_d("userData.userId = %s\r\n",userData.userId);
+    log_d("userData.accessFloor = %s\r\n",userData.accessFloor);
+    log_d("userData.defaultFloor = %d\r\n",userData.defaultFloor);
+    log_d("userData.startTime = %s\r\n",userData.startTime);
 
 
-TestFlash(CARD_MODE); 
+
+log_d("===============CARD_MODE==================\r\n");
+TestFlash(CARD_MODE);
+
+
+log_d("===============USER_MODE==================\r\n");
+TestFlash(USER_MODE);
+
+
+log_d("===============CARD_DEL_MODE==================\r\n");
+TestFlash(CARD_DEL_MODE);
+
+
+log_d("===============USER_DEL_MODE==================\r\n");
+TestFlash(USER_DEL_MODE);
+
+
+
+
+
+
 
 
 //    userData.userState = 1;
@@ -937,7 +1222,7 @@ static SYSERRORCODE_E ClearUserInof ( uint8_t* msgBuf )
         return STR_EMPTY_ERR;
     }
 
-    result = modifyJsonItem((const uint8_t *)msgBuf,(const char *)"status","1",1,buf);
+    result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
 
     if(result != NO_ERR)
     {
@@ -965,10 +1250,8 @@ static SYSERRORCODE_E AddSingleUser( uint8_t* msgBuf )
 	uint16_t len =0;
     uint8_t buf[1024] = {0};
     USERDATA_STRU tempUserData = {0};
-    uint8_t ret = 0;
+    uint8_t ret = 1;
     uint8_t tmp[128] = {0};
-    char *multipleCard[20] = {0};
-    int multipleCardNum = 0;
 
     memset(&tempUserData,0x00,sizeof(USERDATA_STRU));
 
@@ -978,62 +1261,58 @@ static SYSERRORCODE_E AddSingleUser( uint8_t* msgBuf )
     }
 
     //1.添加起始标志
-    tempUserData.head = TABLE_HEAD;
-     
-    //2.保存卡号
+    tempUserData.head = TABLE_HEAD; 
+
+    //1.保存以userID为key的表
     memset(tmp,0x00,sizeof(tmp));
-    strcpy((char *)tmp,(const char *)GetJsonItem((const uint8_t *)msgBuf,(const char *)"cardNo",1));
+    strcpy((char *)tmp,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"userId",1));
+    sprintf((char *)tempUserData.userId,"%08s",tmp);
+    log_d("tempUserData.userId = %s,len = %d\r\n",tempUserData.userId,strlen((const char*)tempUserData.userId));
 
-    if(strlen((const char *)tmp) > CARD_NO_LEN)
-    {
-        split((char *)tmp,",",multipleCard,&multipleCardNum); //调用函数进行分割 
-        log_d("multipleCardNum = %d\r\n",multipleCardNum);
-    }
-    else
-    {
-        sprintf((char *)tempUserData.cardNo,"%08s",tmp);
-    }
     
-    log_d("tempUserData.cardNo = %s,len = %d\r\n",tempUserData.cardNo,strlen((const char*)tempUserData.cardNo));
-
     
     //3.保存楼层权限
-
+    strcpy((char *)tempUserData.accessFloor,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"accessLayer",1));
+    log_d("tempUserData.accessFloor = %s\r\n",tempUserData.accessFloor);
 
     //4.保存默认楼层
-
+    memset(tmp,0x00,sizeof(tmp));
+    strcpy((char *)tmp,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"defaultLayer",1));
+    tempUserData.defaultFloor = atoi((const char*)tmp);
+    log_d("tempUserData.defaultFloor = %d\r\n",tempUserData.defaultFloor);
 
     //5.保存开始时间
-    strcpy((char *)tempUserData.startTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"startTime",1));
+    strcpy((char *)tempUserData.startTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"startTime",1));
     log_d("tempUserData.startTime = %s\r\n",tempUserData.startTime);
     
     //6.保存结束时间
-    strcpy((char *)tempUserData.endTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"endTime",1));
+    strcpy((char *)tempUserData.endTime,  (const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"endTime",1));
     log_d("tempUserData.endTime = %s\r\n",tempUserData.endTime);
 
 
-    if(multipleCardNum > 1)
+    //全0的USER ID不记录
+    if(memcmp(tempUserData.userId,"00000000",CARD_USER_LEN) != 0)
     {
-        for(len=0;len<multipleCardNum;len++)
-        {
-            tempUserData.cardState = CARD_VALID;
-            memcpy(tempUserData.cardNo,multipleCard[len],CARD_NO_LEN);
-            writeUserData(tempUserData,CARD_MODE);
-        }
+        tempUserData.userState = USER_VALID;
+        ret = writeUserData(tempUserData,USER_MODE);
+        log_d("write user id = %d\r\n",ret);       
+    }   
+
+    
+    log_d("tempUserData.cardNo = %s,len = %d\r\n",tempUserData.cardNo,strlen((const char*)tempUserData.cardNo));    
+
+
+
+    if(ret == 0)
+    {
+        //影响服务器
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","1",1,buf);
     }
     else
     {
-        if(memcmp(tempUserData.cardNo,"00000000",CARD_USER_LEN) != 0)
-        {
-            tempUserData.cardState = CARD_VALID;
-            writeUserData(tempUserData,CARD_MODE);
-            log_d("write card id = %d\r\n",ret);           
-        }
+        result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status","0",1,buf);
     }
-
-    //影响服务器
-    result = modifyJsonItem((const uint8_t *)msgBuf,(const char *)"status","1",1,buf);
-
+    
     if(result != NO_ERR)
     {
         return result;
@@ -1061,9 +1340,9 @@ static SYSERRORCODE_E UnbindDev( uint8_t* msgBuf )
         return STR_EMPTY_ERR;
     }
 
-    strcpy((char *)type,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"type",1));
+    strcpy((char *)type,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"type",1));
 
-    result = modifyJsonItem(msgBuf,"status","1",1,buf);
+    result = modifyJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"status",(const uint8_t *)"1",1,buf);
 
     if(result != NO_ERR)
     {
@@ -1074,10 +1353,12 @@ static SYSERRORCODE_E UnbindDev( uint8_t* msgBuf )
 
     if(memcmp(type,"0",1) == 0)
     {
+        SaveDevState(DEVICE_DISABLE);
         SendToQueue(type,strlen((const char*)type),AUTH_MODE_UNBIND);
     }
     else if(memcmp(type,"1",1) == 0)
-    {
+    {    
+        SaveDevState(DEVICE_ENABLE);          
         SendToQueue(type,strlen((const char*)type),AUTH_MODE_BIND);
     } 
     
@@ -1105,7 +1386,7 @@ static SYSERRORCODE_E SetLocalTime( uint8_t* msgBuf )
         return STR_EMPTY_ERR;
     }
 
-    strcpy((char *)localTime,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"time",1));
+    strcpy((char *)localTime,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"time",1));
 
     //保存本地时间
     log_d("server time is %s\r\n",localTime);
@@ -1133,8 +1414,8 @@ static SYSERRORCODE_E SetLocalSn( uint8_t* msgBuf )
         return STR_EMPTY_ERR;
     }
 
-    strcpy((char *)deviceCode,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"deviceCode",0));
-    strcpy((char *)deviceID,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const char *)"id",0));
+    strcpy((char *)deviceCode,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"deviceCode",0));
+    strcpy((char *)deviceID,(const char*)GetJsonItem((const uint8_t *)msgBuf,(const uint8_t *)"id",0));
 
     result = modifyJsonItem(msgBuf,"status","1",0,buf);
 

@@ -286,10 +286,8 @@ static void vTaskBarCode(void *pvParameters)
          
         memcpy(sendBuff+offset,recv_buf,len);
         offset += len; 
-
-
         
-        if(offset > 10  && sendBuff[offset-1] == 0x0A && sendBuff[offset-2] == 0x0D)
+        if(offset > 10  && sendBuff[offset-1] == 0x0A && sendBuff[offset-2] == 0x0D && gDeviceStateFlag == DEVICE_ENABLE)
         {
             comClearRxFifo(COM5);
             log_d("sendbuff = %s\r\n",sendBuff);

@@ -46,6 +46,8 @@
  *----------------------------------------------*/
 #include<stdio.h>
 #include<string.h>
+#include "calcDevNO.h"
+#include "eth_cfg.h"
 
 /*----------------------------------------------*
  * 宏定义                                       *
@@ -64,7 +66,8 @@
  *----------------------------------------------*/
 static void StrReversal(char *str);
 static int findChar(const char acher);
- 
+
+
 static void StrReversal(char *str)
 {
     char tmp;
@@ -77,6 +80,8 @@ static void StrReversal(char *str)
     }
     str[len] = '\0';
 }
+
+//转为字符串
 void myItoa(char *str,int n,int radix)
 {
     char chars[] = {'!','#','$','%','&','(',')','*','+',',','-','.','/','0','1','2','3','4','5','6','7','8','9',':',';','<','=','>','?','@','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','[',']','^','_','`','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','{','}','~'};
@@ -110,12 +115,12 @@ int findChar(const char acher)
     return -1;
 }
 
+//转换为10进制
 int myAtoi(const char *str)
 {
-    int total = 0;          //保存转换后的数值
-    int isNegative = 0;     //记录字符串中是否有负号
+    int total = 0;          //保存转换后的数值    
     int length = 0;         //记录字符串的长度
-    char chars[] = {'!','#','$','%','&','(',')','*','+',',','-','.','/','0','1','2','3','4','5','6','7','8','9',':',';','<','=','>','?','@','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','[',']','^','_','`','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','{','}','~'};
+    //char chars[] = {'!','#','$','%','&','(',')','*','+',',','-','.','/','0','1','2','3','4','5','6','7','8','9',':',';','<','=','>','?','@','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','[',']','^','_','`','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','{','}','~'};
     const char *p = str;
 
     char temp = '!';
@@ -139,6 +144,7 @@ int myAtoi(const char *str)
     {        
         temp = findChar(*p++);
 
+        //if(total != 0)     //滤除字符串开始的0字符
         if(total != 0||temp != -1)     //滤除字符串开始的0字符
         {
             //temp -= '0';
@@ -147,6 +153,91 @@ int myAtoi(const char *str)
     }
 
     return total;               //返回转换后的数值
+}
+
+
+unsigned char findDev(unsigned char *str,unsigned char dataFormat)
+{
+    unsigned char tmpBuff[9] = {0};
+    unsigned char isFind = 0;
+    int len = strlen((const char*)str);
+    int i = 0;
+    int devSN = 0;
+
+    int tmpValue = 0;
+
+    memset(tmpBuff,0x00,sizeof(tmpBuff));
+
+    memcpy(tmpBuff,gMqttDevSn.deviceSn,8);
+
+    devSN = atoi((const char*)tmpBuff);
+
+    printf("devSN = %d,str len = %d\r\n",devSN,len);
+    char buf[6] = {0};
+
+    for(i=0;i<len/dataFormat;i++)
+    {
+        memset(buf,0x00,sizeof(buf));
+        memcpy(buf,str+i*dataFormat,dataFormat);
+        tmpValue = myAtoi(buf);
+        printf("i = %d, tmpValue = %d\t",i,tmpValue);      
+        
+        if(devSN == tmpValue)
+        {
+            isFind = 1;
+        }
+    }
+
+    printf("\r\n"); 
+
+    return isFind;
+}
+
+//int searchHeaderIndex(unsigned char *str,unsigned char dataFormat )
+//{
+//    int isFind = 0;
+//    
+//    switch (dataFormat)
+//    {
+//        case 1:
+//            findDev(str)
+//            break;
+//        case 2:
+//            break;
+//        case 3:
+//            break;
+//        case 4:
+//            break;
+//        case 5:
+//            break;            
+//       default:
+//            break;
+//    }
+
+//    return isFind;
+//}
+
+
+unsigned char *parseAccessFloor(unsigned char *str)
+{
+    static unsigned char result[64] = {0};;
+    char buf[1] = {0};
+    int len = strlen((const char*)str);
+    int i = 0;
+
+    if(len >64)
+    {
+        len = 64;
+    }
+
+    for(i=0;i<len;i++)
+    {
+        memset(buf,0x00,sizeof(buf));
+        memcpy(buf,str+i,1);
+        result[i] = myAtoi(buf); 
+    }
+    
+    return result;    
 }
 
 

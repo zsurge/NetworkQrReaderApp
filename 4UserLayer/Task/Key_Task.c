@@ -73,7 +73,6 @@ static void vTaskKey(void *pvParameters)
 	uint8_t pcWriteBuffer[1024];
 
 
-
     uint32_t g_memsize;
 
     log_d("start vTaskKey\r\n");
@@ -121,7 +120,7 @@ static void vTaskKey(void *pvParameters)
 //                    bsp_ds1302_mdifytime("2020-03-31 10:18:20");
 
                     log_d("bsp_ds1302_readtime = %s\r\n",bsp_ds1302_readtime());
-
+                    ef_set_env_blob("device_sn","88888888",8); 
                     time_to_timestamp();
                     ef_print_env();
 
@@ -133,7 +132,9 @@ static void vTaskKey(void *pvParameters)
 //                    test_env();
                     log_w("KEY_DOWN_K4\r\n");
                     ef_set_env_blob("sn_flag","1111",4); 
-                    ef_set_env_blob("remote_sn","823545AE9B2345B08FD8",20);
+                    ef_set_env_blob("remote_sn","4547E082D8A8770AACAF",20);
+//                ef_set_env_blob("remote_sn","823545AE9B2345B08FD8",20);
+                    
 					break;                
 				
 				/* 其他的键值不处理 */

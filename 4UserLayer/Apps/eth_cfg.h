@@ -33,11 +33,14 @@
  * 宏定义                                       *
  *----------------------------------------------*/
 #define   HOST_NAME       "192.168.110.109"     //服务器IP地址 线下 
-//120.78.247.221:1883
 #define   HOST_PORT     1883    //由于是TCP连接，端口必须是1883
 
 #define DEVICE_PUBLISH		"/smartCloud/server/msg/device"	
-#define DEVICE_SUBSCRIBE	"/smartCloud/terminal/msg/"  
+#define DEVICE_SUBSCRIBE	"/smartCloud/terminal/msg/"   
+#define DEVICE_SN           "3E51E8848A4C00863617"
+
+
+
 
 #define DEV_FACTORY_PUBLISH		"/smartCloud/production/msg/device"	
 #define DEV_FACTORY_SUBSCRIBE	"/smartCloud/production/msg/"    
@@ -45,7 +48,7 @@
 
 typedef struct
 {
-    char deviceSn[4];
+    char deviceSn[8];
     char sn[32];    
     char publish[128];
     char subscribe[128];
@@ -64,7 +67,7 @@ extern MQTT_DEVICE_SN_STRU gMqttDevSn;
  * 内部函数原型说明                             *
  *----------------------------------------------*/
 
-void ReadLocalDevSn(void);
+
 
 #endif
 

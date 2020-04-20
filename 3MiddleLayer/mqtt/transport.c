@@ -238,7 +238,6 @@ int transport_open(char* addr, int port)
 	int* sock = &my_sock;
 	struct hostent *server;
 	struct sockaddr_in serv_addr;
-
 	int timeout = 1000;
 
 	*sock = socket(AF_INET, SOCK_STREAM, 0);
