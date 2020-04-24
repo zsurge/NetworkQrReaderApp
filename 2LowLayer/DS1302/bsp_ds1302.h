@@ -11,9 +11,9 @@
 /* ∫Í∂®“Â --------------------------------------------------------------------*/
 
 #define DS1302_PORT GPIOE
-#define DS1302CLK	GPIO_Pin_9
+#define DS1302CLK	GPIO_Pin_7
 #define DS1302DAT 	GPIO_Pin_8
-#define DS1302RST 	GPIO_Pin_7    
+#define DS1302RST 	GPIO_Pin_9    
 
 
 

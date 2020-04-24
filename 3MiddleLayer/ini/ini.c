@@ -266,7 +266,7 @@ void readCardAndUserIdIndex(void)
 
 void SaveDevState(char state)
 {
-    uint8_t devState[4] = {0};
+    uint8_t devState[5] = {0};
     
     gDeviceStateFlag = state;        
     memset(devState,0x00,sizeof(devState));

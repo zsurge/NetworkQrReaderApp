@@ -56,7 +56,7 @@ static void my_mem_init(void)
 	
     bsp_InitUart();
 
-    bsp_ds1302_init(); //DS1302_GPIO_Init();             //时钟芯片初始化    
+    bsp_ds1302_init();          //时钟芯片初始化    
 
 //	bsp_key_Init();             //按键初始化
 

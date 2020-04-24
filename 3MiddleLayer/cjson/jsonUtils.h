@@ -117,6 +117,8 @@ SYSERRORCODE_E PacketDeviceInfo ( const uint8_t* jsonBuff,const uint8_t* descJso
 
 //打包APP升级后需上送的数据
 SYSERRORCODE_E upgradeDataPacket(uint8_t *descBuf);
+//存储APP升级后需上送的数据
+SYSERRORCODE_E saveUpgradeData(uint8_t *jsonBuff);
 
 SYSERRORCODE_E getTimePacket(uint8_t *descBuf);
 

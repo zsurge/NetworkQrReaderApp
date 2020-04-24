@@ -50,10 +50,6 @@
 #define QUEUE_BUF_LEN   512
 
 
-
-
-
-
 #pragma pack(1)
 typedef struct
 {

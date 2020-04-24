@@ -20,7 +20,7 @@ void bsp_LED_Init(void)
            
       GPIO_SetBits(GPIO_PORT,GPIO_PIN_LED1|GPIO_PIN_ERRORLED);
 
-      
+      GPIO_SetBits(GPIO_PORT,GPIO_PIN_SWITCH);
 }
 
 
